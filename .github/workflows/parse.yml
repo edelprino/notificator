@@ -3,9 +3,9 @@ on:
     branches:
       - master
   schedule:
-    - cron:  '0 8 * * *'
+    - cron:  '0 8 */3 * *' # at 8:00 every 3 days
 
-name: Parse federclimb courses
+name: Notify for new federclimb courses
 jobs:
   build:
     name: Build
@@ -15,4 +15,4 @@ jobs:
       - uses: actions/setup-go@v2
         with:
           go-version: '^1.16'
-      - run: go run main.go
+      - run: make run

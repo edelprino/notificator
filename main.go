@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"time"
@@ -17,29 +18,24 @@ type Course struct {
 
 type Courses []Course
 
-func (c Courses) stringify() string {
+func (c Courses) String() string {
 	var buffer bytes.Buffer
 	for _, course := range c {
-		buffer.WriteString(fmt.Sprintf("%s\n", course.Titolo))
-		buffer.WriteString(fmt.Sprintf("DataInizio: %s\n", course.DataInizio))
-		buffer.WriteString(fmt.Sprintf("Comune: %s\n", course.Comune))
-		buffer.WriteString(fmt.Sprintf("-------\n"))
+		buffer.WriteString(fmt.Sprintf("<b>%s</b><br>\nDataInizio: %s<br>\nComune: %s<br>\n<hr>\n", course.Titolo, course.DataInizio, course.Comune))
 	}
 	return buffer.String()
 }
 
-func (c Courses) html() string {
-	var buffer bytes.Buffer
-	for _, course := range c {
-		buffer.WriteString(fmt.Sprintf("<b>%s</b><br>", course.Titolo))
-		buffer.WriteString(fmt.Sprintf("DataInizio: %s<br>", course.DataInizio))
-		buffer.WriteString(fmt.Sprintf("Comune: %s<br>", course.Comune))
-		buffer.WriteString(fmt.Sprintf("<hr>"))
+func NewCoursesFromReader(reader io.Reader) (Courses, error) {
+	var courses Courses
+	err := json.NewDecoder(reader).Decode(&courses)
+	if err != nil {
+		return nil, err
 	}
-	return buffer.String()
+	return courses, nil
 }
 
-func (c Courses) removeCourserAlreadyStarted() Courses {
+func (c Courses) Upcoming() Courses {
 	var courses Courses
 	for _, course := range c {
 		when, err := time.Parse("2006-01-02", course.DataInizio)
@@ -56,43 +52,25 @@ func (c Courses) removeCourserAlreadyStarted() Courses {
 }
 
 func main() {
-	fmt.Println("Starting")
+	fmt.Println("############ Starting")
+
+	notificator := NewArrayNotificator(
+		NewConsoleNotificator(),
+		NewIFTTTNotificator("cLw9xVm1E5_4jobIOI6QIN"),
+	)
+
+	fmt.Println("############ Fetch")
 	resp, err := http.Get("https://www.federclimb.it/formazione/index.php?option=com_gare&task=getCorsi&_=1637958764145")
-
-	if err != nil {
-		log.Fatal(err)
-	}
-	fmt.Println("Decode")
-
-	var courses Courses
-	err = json.NewDecoder(resp.Body).Decode(&courses)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	fmt.Printf(courses.removeCourserAlreadyStarted().stringify())
-
-	sendNotification("Corsi FederClimb", courses.removeCourserAlreadyStarted().html())
-
-}
-
-func sendNotification(title string, message string) {
-	type Email struct {
-		Title   string `json:"value1"`
-		Message string `json:"value2"`
-	}
-
-	email := Email{title, message}
-
-	json, err := json.Marshal(email)
+	fmt.Println("############ Decode")
+	courses, err := NewCoursesFromReader(resp.Body)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	_, err = http.Post("https://maker.ifttt.com/trigger/email/with/key/cLw9xVm1E5_4jobIOI6QIN", "application/json", bytes.NewBuffer(json))
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	fmt.Println("Notification sent")
+	fmt.Println("############ Notify")
+	notificator.Notify("Prossimi corsi FederClimb", courses.Upcoming().String())
 }
